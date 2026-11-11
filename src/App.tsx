@@ -145,7 +145,7 @@ export default function App() {
         target_pin: pinId, claimant_lat: p.coords.latitude, claimant_lon: p.coords.longitude,
       });
       if (error) setNotice(error.message);
-      else if (data) { setPins(current => current.filter(pin => pin.id !== pinId)); setNotice('Pin claimed and added to your profile.'); }
+      else if (data) { setPins(current => current.filter(pin => pin.id !== pinId)); setNotice('Pin claimed and removed from the live map.'); }
       else setNotice('You must be within 75 metres of the pin to claim it.');
     }, e => setNotice(e.message), { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
   }
