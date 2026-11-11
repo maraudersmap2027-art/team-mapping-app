@@ -65,7 +65,15 @@ export default function App() {
         supabase!.from('locations').select('user_id,latitude,longitude,updated_at').eq('team_id', team.id),
         supabase!.from('map_pins').select('*').eq('team_id', team.id).is('claimed_at', null).order('created_at', { ascending: false }),
       ]);
-      if (alive) { setLocations((locs ?? []) as LocationRow[]); setPins((photoPins ?? []) as Pin[]); }
+      if (alive) {
+        setLocations((locs ?? []) as LocationRow[]);
+        const hydratedPins = await Promise.all(((photoPins ?? []) as Pin[]).map(async pin => {
+          if (!pin.image_path) return pin;
+          const { data } = await supabase!.storage.from('team-media').createSignedUrl(pin.image_path, 3600);
+          return { ...pin, image_url: data?.signedUrl ?? null };
+        }));
+        if (alive) setPins(hydratedPins);
+      }
     };
     void load();
     const channel = supabase.channel('team-map-' + team.id)
