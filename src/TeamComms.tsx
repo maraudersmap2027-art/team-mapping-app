@@ -52,7 +52,7 @@ export default function TeamComms({teamId,userId}:{teamId:string;userId:string})
   useEffect(()=>{
     void load();
     if(!supabase) return;
-    const channel=supabase.channel('team-chat-'+teamId)
+    const channel=supabase.channel('team-chat-'+teamId, { config: { private: true } })
       .on('postgres_changes',{event:'*',schema:'public',table:'messages',filter:'team_id=eq.'+teamId},()=>void load())
       .subscribe();
     return ()=>{void supabase?.removeChannel(channel);};
