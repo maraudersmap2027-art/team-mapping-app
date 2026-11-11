@@ -62,11 +62,12 @@ jobs:
               permissions = """    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
               <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
               <uses-permission android:name="android.permission.RECORD_AUDIO" />
+              <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
               <uses-feature android:name="android.hardware.location.gps" android:required="false" />
           """
               content = content.replace("    <application", permissions + "    <application", 1)
               manifest.write_text(content)
-          if any(permission not in manifest.read_text() for permission in ["android.permission.ACCESS_COARSE_LOCATION", "android.permission.ACCESS_FINE_LOCATION", "android.permission.RECORD_AUDIO"]):
+          if any(permission not in manifest.read_text() for permission in ["android.permission.ACCESS_COARSE_LOCATION", "android.permission.ACCESS_FINE_LOCATION", "android.permission.RECORD_AUDIO", "android.permission.MODIFY_AUDIO_SETTINGS"]):
               raise SystemExit("Failed to add Android location and microphone permissions")
           print("Android coarse/fine location and microphone permissions are declared.")
           PY
