@@ -29,6 +29,7 @@ export default function LivePTT({ teamId, userId, recipientId, recipientHandle }
   const ownerRef = useRef<'caller' | 'receiver' | null>(null);
   const pendingIceRef = useRef<RTCIceCandidateInit[]>([]);
   const mountedRef = useRef(true);
+  const holdingRef = useRef(false);
 
   function closePeer() {
     peerRef.current?.close();
@@ -200,6 +201,7 @@ export default function LivePTT({ teamId, userId, recipientId, recipientHandle }
         sdp: pc.localDescription ?? offer,
       });
       setStatus('Calling ' + recipientHandle + ' — hold to talk');
+      if (!holdingRef.current) await stopTalking();
     } catch (error) {
       closePeer();
       setStatus(error instanceof Error ? error.message : 'Could not start push-to-talk.');
@@ -209,9 +211,8 @@ export default function LivePTT({ teamId, userId, recipientId, recipientHandle }
   async function stopTalking() {
     const callId = callIdRef.current;
     if (!callId) return;
-    if (ownerRef.current === 'caller') {
-      try { await signal({ kind: 'stop', from: userId, to: recipientId, callId }); } catch { /* connection may already be gone */ }
-    }
+    if (ownerRef.current !== 'caller') return;
+    try { await signal({ kind: 'stop', from: userId, to: recipientId, callId }); } catch { /* connection may already be gone */ }
     closePeer();
     setStatus('Radio ready.');
   }
@@ -235,14 +236,16 @@ export default function LivePTT({ teamId, userId, recipientId, recipientHandle }
       disabled={!connected}
       onPointerDown={event => {
         event.preventDefault();
+        holdingRef.current = true;
         if (event.currentTarget.setPointerCapture) event.currentTarget.setPointerCapture(event.pointerId);
         void startTalking();
       }}
       onPointerUp={event => {
+        holdingRef.current = false;
         if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
         void stopTalking();
       }}
-      onPointerCancel={() => void stopTalking()}
+      onPointerCancel={() => { holdingRef.current = false; void stopTalking(); }}
       onContextMenu={event => event.preventDefault()}
     >
       <Mic size={18} />
