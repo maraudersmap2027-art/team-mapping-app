@@ -10,7 +10,7 @@ import TeamComms from './TeamComms';
 type Profile = { id: string; handle: string; status: 'active' | 'idle' | 'away' };
 type Team = { id: string; name: string; invite_code: string };
 type LocationRow = { user_id: string; latitude: number; longitude: number; updated_at: string; profiles?: Profile };
-type Pin = { id: string; title: string; description: string | null; image_url: string | null; latitude: number; longitude: number; created_at: string; creator_id: string };
+type Pin = { id: string; title: string; description: string | null; image_url: string | null; image_path?: string | null; latitude: number; longitude: number; created_at: string; creator_id: string };
 
 const defaultCenter: [number, number] = [39.5, -98.35];
 const markerIcon = L.divIcon({ className: 'team-marker', html: '<span></span>', iconSize: [22, 22], iconAnchor: [11, 11] });
