@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { Geolocation } from '@capacitor/geolocation';
 import type { FormEvent, ChangeEvent } from 'react';
 import { Camera, Mic, Radio, Send, Square } from 'lucide-react';
 import { supabase } from './lib/supabase';
@@ -77,7 +79,22 @@ export default function TeamComms({teamId,userId}:{teamId:string;userId:string})
     if(!file.type.startsWith('image/')){setNotice('Choose an image file.');return;}
     setUploading(true);setNotice('');
     try {
-      const pos=await new Promise<GeolocationPosition>((resolve,reject)=>navigator.geolocation.getCurrentPosition(resolve,reject,{enableHighAccuracy:true,timeout:15000}));
+      let latitude:number;
+      let longitude:number;
+      if(Capacitor.isNativePlatform()){
+        let permission=await Geolocation.checkPermissions();
+        if(permission.location!=='granted'){
+          permission=await Geolocation.requestPermissions();
+        }
+        if(permission.location!=='granted') throw new Error('Location permission was not granted. Allow location access when Android asks, then try again.');
+        const position=await Geolocation.getCurrentPosition({enableHighAccuracy:true,timeout:20000});
+        latitude=position.coords.latitude;
+        longitude=position.coords.longitude;
+      }else{
+        const position=await new Promise<GeolocationPosition>((resolve,reject)=>navigator.geolocation.getCurrentPosition(resolve,reject,{enableHighAccuracy:true,timeout:20000}));
+        latitude=position.coords.latitude;
+        longitude=position.coords.longitude;
+      }
       setAiTitle('Analyzing photo with AI…');
       const resized = await new Promise<{blob:Blob; data:string}>((resolve,reject)=>{
         const image = new Image(); const objectUrl = URL.createObjectURL(file);
@@ -102,7 +119,7 @@ export default function TeamComms({teamId,userId}:{teamId:string;userId:string})
       const path=teamId+'/'+userId+'/'+crypto.randomUUID()+'.jpg';
       const up=await supabase.storage.from('team-media').upload(path,resized.blob,{contentType:'image/jpeg'});
       if(up.error)throw up.error;
-      const result=await supabase.from('map_pins').insert({team_id:teamId,creator_id:userId,title:finalTitle,description:generated ? 'AI-generated photo title' : null,image_path:path,latitude:pos.coords.latitude,longitude:pos.coords.longitude});
+      const result=await supabase.from('map_pins').insert({team_id:teamId,creator_id:userId,title:finalTitle,description:generated ? 'AI-generated photo title' : null,image_path:path,latitude,longitude});
       if(result.error){await supabase.storage.from('team-media').remove([path]);throw result.error;}
       setTitle('');setAiTitle(''); setNotice(generated ? 'AI titled your photo: '+finalTitle : 'Photo pin added. AI title unavailable; used a fallback title.');
       if(ai.error) console.warn('AI title generation unavailable:',ai.error.message);
