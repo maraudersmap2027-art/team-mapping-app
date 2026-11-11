@@ -58,16 +58,17 @@ jobs:
           from pathlib import Path
           manifest = Path("android/app/src/main/AndroidManifest.xml")
           content = manifest.read_text()
-          if "android.permission.ACCESS_COARSE_LOCATION" not in content:
+          if "android.permission.ACCESS_COARSE_LOCATION" not in content or "android.permission.RECORD_AUDIO" not in content:
               permissions = """    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
               <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+              <uses-permission android:name="android.permission.RECORD_AUDIO" />
               <uses-feature android:name="android.hardware.location.gps" android:required="false" />
           """
               content = content.replace("    <application", permissions + "    <application", 1)
               manifest.write_text(content)
-          if "android.permission.ACCESS_COARSE_LOCATION" not in manifest.read_text() or "android.permission.ACCESS_FINE_LOCATION" not in manifest.read_text():
-              raise SystemExit("Failed to add Android location permissions")
-          print("Android coarse and fine location permissions are declared.")
+          if any(permission not in manifest.read_text() for permission in ["android.permission.ACCESS_COARSE_LOCATION", "android.permission.ACCESS_FINE_LOCATION", "android.permission.RECORD_AUDIO"]):
+              raise SystemExit("Failed to add Android location and microphone permissions")
+          print("Android coarse/fine location and microphone permissions are declared.")
           PY
 
       - name: Build debug APK
