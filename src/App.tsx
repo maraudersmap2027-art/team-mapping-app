@@ -77,7 +77,7 @@ export default function App() {
       }
     };
     void load();
-    const channel = supabase.channel('team-map-' + team.id)
+    const channel = supabase.channel('team-map-' + team.id, { config: { private: true } })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'locations', filter: 'team_id=eq.' + team.id }, () => void load())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'map_pins', filter: 'team_id=eq.' + team.id }, () => void load())
       .subscribe();
