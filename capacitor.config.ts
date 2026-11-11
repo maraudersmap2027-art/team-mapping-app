@@ -4,7 +4,6 @@ const config: CapacitorConfig = {
   appId: 'com.teammapping.fieldlink',
   appName: 'FieldLink',
   webDir: 'dist',
-  bundledWebRuntime: false,
   android: { allowMixedContent: false },
 };
 
