@@ -1,13 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { getCurrentDevicePosition } from './lib/location';
 import type { FormEvent, ChangeEvent } from 'react';
-import { Camera, Mic, Radio, Send, Square } from 'lucide-react';
+import { Camera, Mic, Radio, Send, Square, Users } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
-type Message = { id:string; sender_id:string; body:string|null; audio_path:string|null; created_at:string };
+type Message = { id:string; sender_id:string; recipient_id:string|null; body:string|null; audio_path:string|null; created_at:string };
+type Member = { id:string; handle:string; status:string };
 
 export default function TeamComms({teamId,userId}:{teamId:string;userId:string}) {
   const [items,setItems]=useState<Message[]>([]);
+  const [members,setMembers]=useState<Member[]>([]);
+  const [recipientId,setRecipientId]=useState('');
+  const [mode,setMode]=useState<'team'|'direct'>('team');
   const [draft,setDraft]=useState('');
   const [title,setTitle]=useState('');
   const [aiTitle,setAiTitle]=useState('');
@@ -17,12 +21,32 @@ export default function TeamComms({teamId,userId}:{teamId:string;userId:string})
   const [audioUrls,setAudioUrls]=useState<Record<string,string>>({});
   const recorder=useRef<MediaRecorder|null>(null);
   const chunks=useRef<Blob[]>([]);
+  const recipient=mode==='direct' ? recipientId : null;
 
   async function load() {
     if(!supabase) return;
-    const {data,error}=await supabase.from('messages').select('id,sender_id,body,audio_path,created_at').eq('team_id',teamId).order('created_at',{ascending:true}).limit(100);
+    let query=supabase.from('messages').select('id,sender_id,recipient_id,body,audio_path,created_at').eq('team_id',teamId);
+    if(recipient) query=query.or('and(sender_id.eq.'+userId+',recipient_id.eq.'+recipient+'),and(sender_id.eq.'+recipient+',recipient_id.eq.'+userId+')');
+    else query=query.is('recipient_id',null);
+    const {data,error}=await query.order('created_at',{ascending:true}).limit(100);
     if(error) setNotice(error.message); else setItems((data??[]) as Message[]);
   }
+
+  useEffect(()=>{
+    if(!supabase) return;
+    let active=true;
+    (async()=>{
+      const {data:links,error}=await supabase!.from('team_members').select('user_id').eq('team_id',teamId);
+      if(error){setNotice(error.message);return;}
+      const ids=(links??[]).map(row=>row.user_id).filter(id=>id!==userId);
+      if(!ids.length){if(active)setMembers([]);return;}
+      const {data:profiles, error:profileError}=await supabase!.from('profiles').select('id,handle,status').in('id',ids).order('handle');
+      if(profileError){setNotice(profileError.message);return;}
+      if(active)setMembers((profiles??[]) as Member[]);
+    })();
+    return ()=>{active=false;};
+  },[teamId,userId]);
+
   useEffect(()=>{
     void load();
     if(!supabase) return;
@@ -30,19 +54,21 @@ export default function TeamComms({teamId,userId}:{teamId:string;userId:string})
       .on('postgres_changes',{event:'*',schema:'public',table:'messages',filter:'team_id=eq.'+teamId},()=>void load())
       .subscribe();
     return ()=>{void supabase?.removeChannel(channel);};
-  },[teamId]);
+  },[teamId,userId,recipientId,mode]);
 
   async function send(event:FormEvent) {
     event.preventDefault();
     const body=draft.trim();
     if(!body||!supabase) return;
+    if(mode==='direct'&&!recipientId){setNotice('Choose a teammate first.');return;}
     setDraft('');
-    const {error}=await supabase.from('messages').insert({team_id:teamId,sender_id:userId,body});
+    const {error}=await supabase.from('messages').insert({team_id:teamId,sender_id:userId,recipient_id:recipient,body});
     if(error){setDraft(body);setNotice(error.message);}
   }
 
   async function voice() {
     if(recording){recorder.current?.stop();setRecording(false);return;}
+    if(mode==='direct'&&!recipientId){setNotice('Choose a teammate before recording a private voice message.');return;}
     if(!navigator.mediaDevices?.getUserMedia||typeof MediaRecorder==='undefined'){setNotice('Voice recording is not supported by this browser.');return;}
     if(!supabase) return;
     try {
@@ -58,7 +84,7 @@ export default function TeamComms({teamId,userId}:{teamId:string;userId:string})
         const path=teamId+'/'+userId+'/'+crypto.randomUUID()+'.'+ext;
         const up=await supabase!.storage.from('team-media').upload(path,blob,{contentType:blob.type});
         if(up.error){setNotice(up.error.message);setUploading(false);return;}
-        const sent=await supabase!.from('messages').insert({team_id:teamId,sender_id:userId,audio_path:path});
+        const sent=await supabase!.from('messages').insert({team_id:teamId,sender_id:userId,recipient_id:recipient,audio_path:path});
         if(sent.error){await supabase!.storage.from('team-media').remove([path]);setNotice(sent.error.message);}
         setUploading(false);
       };
@@ -126,13 +152,26 @@ export default function TeamComms({teamId,userId}:{teamId:string;userId:string})
     }
   }
 
+  const activeMember=members.find(member=>member.id===recipientId);
   return <section className="comms-grid">
     <div className="chat-panel">
       <div className="chat-title"><div><span className="eyebrow">TEAM COMMS</span><h3>Messages & PTT</h3></div><span className="live-tag">LIVE</span></div>
-      <div className="message-list">{items.map(m=><article className={m.sender_id===userId?'message mine':'message'} key={m.id}><small>{m.sender_id===userId?'You':'Team member'} · {new Date(m.created_at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}</small>{m.body&&<p>{m.body}</p>}{m.audio_path&&<button className="voice-play" onClick={()=>void play(m)}><Radio size={15}/> Play voice message</button>}</article>)}{items.length===0&&<p className="empty-chat">No messages yet. Send the first team update.</p>}</div>
-      <form className="chat-compose" onSubmit={send}><input value={draft} onChange={e=>setDraft(e.target.value)} placeholder="Message your team…" aria-label="Message your team"/><button className="send-button" disabled={!draft.trim()} title="Send"><Send size={17}/></button><button type="button" className={recording?'record-button recording':'record-button'} onClick={()=>void voice()} disabled={uploading} title={recording?'Stop recording':'Record PTT voice note'}>{recording?<Square size={16}/>:<Mic size={17}/>}</button></form>
-      <p className="chat-hint">{recording?'Recording — tap stop to send.':'Voice notes are shared with the whole team.'}</p>
+      <div className="chat-modes" role="group" aria-label="Conversation type">
+        <button type="button" className={mode==='team'?'active':''} onClick={()=>{setMode('team');setNotice('');}}><Users size={15}/> Team chat</button>
+        <button type="button" className={mode==='direct'?'active':''} onClick={()=>{setMode('direct');setNotice('');}}><Radio size={15}/> Direct</button>
+      </div>
+      {mode==='direct'&&<label className="recipient-picker">Private conversation
+        <select value={recipientId} onChange={e=>setRecipientId(e.target.value)}>
+          <option value="">Choose a teammate…</option>
+          {members.map(member=><option key={member.id} value={member.id}>{member.handle} · {member.status}</option>)}
+        </select>
+      </label>}
+      <div className="conversation-label">{mode==='team'?'Messages for the whole team':activeMember?'Private chat with '+activeMember.handle:'Select a teammate to start a private chat'}</div>
+      <div className="message-list">{items.map(m=><article className={m.sender_id===userId?'message mine':'message'} key={m.id}><small>{m.sender_id===userId?'You':mode==='direct'?activeMember?.handle??'Teammate':'Team member'} · {new Date(m.created_at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}</small>{m.body&&<p>{m.body}</p>}{m.audio_path&&<button className="voice-play" onClick={()=>void play(m)}><Radio size={15}/> Play voice message</button>}</article>)}{items.length===0&&<p className="empty-chat">{mode==='direct'&&!recipientId?'Choose a teammate above to view your private conversation.':'No messages yet. Send the first update.'}</p>}</div>
+      <form className="chat-compose" onSubmit={send}><input value={draft} onChange={e=>setDraft(e.target.value)} placeholder={mode==='direct'?'Private message…':'Message your team…'} aria-label="Message" disabled={mode==='direct'&&!recipientId}/><button className="send-button" disabled={!draft.trim()||(mode==='direct'&&!recipientId)} title="Send"><Send size={17}/></button><button type="button" className={recording?'record-button recording':'record-button'} onClick={()=>void voice()} disabled={uploading||(mode==='direct'&&!recipientId)} title={recording?'Stop recording':'Record voice message'}>{recording?<Square size={16}/>:<Mic size={17}/>}</button></form>
+      <p className="chat-hint">{recording?'Recording — tap stop to send.':mode==='direct'?'Private text and voice messages are visible only to you and the selected teammate.':'Team text and voice messages are visible to all team members.'}</p>
+      {notice&&<p className="notice">{notice}</p>}
     </div>
-    <div className="photo-panel"><div><span className="eyebrow">MAP INTEL</span><h3>Drop a photo pin</h3><p className="chat-hint">AI identifies the main subject and creates a concise map title, then attaches your GPS position.</p></div><input className="photo-title" value={title} onChange={e=>setTitle(e.target.value)} placeholder="Photo title (optional)" aria-label="Photo title"/><label className="photo-upload"><Camera size={17}/>{uploading?(aiTitle||'Uploading…'):'Take photo / choose image'}<input type="file" accept="image/*" capture="environment" onChange={photo} disabled={uploading}/></label>{notice&&<p className="notice">{notice}</p>}</div>
+    <div className="photo-panel"><div><span className="eyebrow">MAP INTEL</span><h3>Drop a photo pin</h3><p className="chat-hint">AI identifies the main subject and creates a concise map title, then attaches your GPS position.</p></div><input className="photo-title" value={title} onChange={e=>setTitle(e.target.value)} placeholder="Photo title (optional)" aria-label="Photo title"/><label className="photo-upload"><Camera size={17}/>{uploading?(aiTitle||'Uploading…'):'Take photo / choose image'}<input type="file" accept="image/*" capture="environment" onChange={photo} disabled={uploading}/></label></div>
   </section>;
 }
