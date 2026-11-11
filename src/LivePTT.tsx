@@ -27,7 +27,7 @@ export default function LivePTT({ teamId, userId, recipientId, recipientHandle }
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const callIdRef = useRef('');
   const ownerRef = useRef<'caller' | 'receiver' | null>(null);
-  const pendingIceRef = useRef<RTCIceCandidateInit[]>([]);
+  const pendingIceRef = useRef<Array<{ callId: string; candidate: RTCIceCandidateInit }>>([]);
   const mountedRef = useRef(true);
   const holdingRef = useRef(false);
 
@@ -82,10 +82,10 @@ export default function LivePTT({ teamId, userId, recipientId, recipientHandle }
     return pc;
   }
 
-  async function flushIce(pc: RTCPeerConnection) {
-    const queued = pendingIceRef.current;
-    pendingIceRef.current = [];
-    for (const candidate of queued) await pc.addIceCandidate(candidate);
+  async function flushIce(pc: RTCPeerConnection, callId: string) {
+    const queued = pendingIceRef.current.filter(item => item.callId === callId);
+    pendingIceRef.current = pendingIceRef.current.filter(item => item.callId !== callId);
+    for (const item of queued) await pc.addIceCandidate(item.candidate);
   }
 
   async function handleSignal(signalPayload: Signal) {
@@ -97,13 +97,13 @@ export default function LivePTT({ teamId, userId, recipientId, recipientHandle }
         await signal({ kind: 'busy', from: userId, to: recipientId, callId: message.callId });
         return;
       }
-      closePeer();
+      if (peerRef.current) closePeer();
       callIdRef.current = message.callId;
       ownerRef.current = 'receiver';
       setStatus('Incoming radio call…');
       const pc = createPeer(message.callId);
       await pc.setRemoteDescription(message.sdp);
-      await flushIce(pc);
+      await flushIce(pc, message.callId);
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
       await signal({
@@ -114,18 +114,25 @@ export default function LivePTT({ teamId, userId, recipientId, recipientHandle }
       return;
     }
 
+    if (message.kind === 'ice' && message.candidate) {
+      const pc = peerRef.current;
+      if (!pc) {
+        pendingIceRef.current.push({ callId: message.callId, candidate: message.candidate });
+        return;
+      }
+      if (message.callId !== callIdRef.current) return;
+      if (pc.remoteDescription) await pc.addIceCandidate(message.candidate);
+      else pendingIceRef.current.push({ callId: message.callId, candidate: message.candidate });
+      return;
+    }
+
     if (message.callId !== callIdRef.current) return;
     if (message.kind === 'answer' && message.sdp && ownerRef.current === 'caller') {
       const pc = peerRef.current;
       if (!pc) return;
       await pc.setRemoteDescription(message.sdp);
-      await flushIce(pc);
+      await flushIce(pc, message.callId);
       setStatus('Radio connected — hold to speak');
-    } else if (message.kind === 'ice' && message.candidate) {
-      const pc = peerRef.current;
-      if (!pc) return;
-      if (pc.remoteDescription) await pc.addIceCandidate(message.candidate);
-      else pendingIceRef.current.push(message.candidate);
     } else if (message.kind === 'stop') {
       closePeer();
       setStatus('Teammate released the radio.');
