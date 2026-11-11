@@ -106,7 +106,13 @@ export default function TeamComms({teamId,userId}:{teamId:string;userId:string})
       if(result.error){await supabase.storage.from('team-media').remove([path]);throw result.error;}
       setTitle('');setAiTitle(''); setNotice(generated ? 'AI titled your photo: '+finalTitle : 'Photo pin added. AI title unavailable; used a fallback title.');
       if(ai.error) console.warn('AI title generation unavailable:',ai.error.message);
-    } catch(e){setNotice(e instanceof Error?e.message:'Could not create photo pin.');}
+    } catch(e){
+      const geoError = e && typeof e === 'object' && 'code' in e ? Number((e as {code: number}).code) : 0;
+      if (geoError === 1) setNotice('Location permission was denied. Allow location access for this app in Android settings, then try again.');
+      else if (geoError === 2) setNotice('Your location is unavailable. Turn on Android Location/GPS and try again.');
+      else if (geoError === 3) setNotice('Getting your location timed out. Move somewhere with a clearer GPS signal and try again.');
+      else setNotice(e instanceof Error ? e.message : 'Could not create photo pin. Please try again.');
+    }
     finally{setUploading(false);setAiTitle('');event.target.value='';}
   }
 
