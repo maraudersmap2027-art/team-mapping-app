@@ -20,10 +20,7 @@ async function generateTitle(apiKey: string, model: string, imageBase64: string,
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
     {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey,
-      },
+      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
       body: JSON.stringify({
         contents: [{ parts: [
           { text: prompt },
@@ -31,7 +28,8 @@ async function generateTitle(apiKey: string, model: string, imageBase64: string,
         ] }],
         generationConfig: { temperature: 0.2, maxOutputTokens: 40 },
       }),
-      signal: AbortSignal.timeout(12000),
+      // Two model attempts must fit inside the app's 20-second client timeout.
+      signal: AbortSignal.timeout(8000),
     },
   );
 
@@ -78,8 +76,8 @@ Deno.serve(async (req: Request) => {
       return json({ error: "Unsupported image format." }, 400);
     }
 
-    // Prefer the efficient, free-tier Flash-Lite model. If it is busy or unavailable,
-    // automatically fail over to Flash so a temporary model outage does not block titles.
+    // Prefer the efficient, free-tier Flash-Lite model, then automatically fail over
+    // to Flash if Flash-Lite is busy or unavailable.
     const models = ["gemini-3.5-flash-lite", "gemini-3.8-flash"];
     let lastStatus = 503;
 
