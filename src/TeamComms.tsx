@@ -3,6 +3,7 @@ import { getCurrentDevicePosition } from './lib/location';
 import type { FormEvent, ChangeEvent } from 'react';
 import { Camera, Mic, Radio, Send, Square, Users } from 'lucide-react';
 import { supabase } from './lib/supabase';
+import LivePTT from './LivePTT';
 
 type Message = { id:string; sender_id:string; recipient_id:string|null; body:string|null; audio_path:string|null; created_at:string };
 type Member = { id:string; handle:string; status:string };
@@ -25,6 +26,7 @@ export default function TeamComms({teamId,userId}:{teamId:string;userId:string})
 
   async function load() {
     if(!supabase) return;
+    if(mode==='direct'&&!recipientId){setItems([]);return;}
     let query=supabase.from('messages').select('id,sender_id,recipient_id,body,audio_path,created_at').eq('team_id',teamId);
     if(recipient) query=query.or('and(sender_id.eq.'+userId+',recipient_id.eq.'+recipient+'),and(sender_id.eq.'+recipient+',recipient_id.eq.'+userId+')');
     else query=query.is('recipient_id',null);
@@ -169,7 +171,8 @@ export default function TeamComms({teamId,userId}:{teamId:string;userId:string})
       <div className="conversation-label">{mode==='team'?'Messages for the whole team':activeMember?'Private chat with '+activeMember.handle:'Select a teammate to start a private chat'}</div>
       <div className="message-list">{items.map(m=><article className={m.sender_id===userId?'message mine':'message'} key={m.id}><small>{m.sender_id===userId?'You':mode==='direct'?activeMember?.handle??'Teammate':'Team member'} · {new Date(m.created_at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}</small>{m.body&&<p>{m.body}</p>}{m.audio_path&&<button className="voice-play" onClick={()=>void play(m)}><Radio size={15}/> Play voice message</button>}</article>)}{items.length===0&&<p className="empty-chat">{mode==='direct'&&!recipientId?'Choose a teammate above to view your private conversation.':'No messages yet. Send the first update.'}</p>}</div>
       <form className="chat-compose" onSubmit={send}><input value={draft} onChange={e=>setDraft(e.target.value)} placeholder={mode==='direct'?'Private message…':'Message your team…'} aria-label="Message" disabled={mode==='direct'&&!recipientId}/><button className="send-button" disabled={!draft.trim()||(mode==='direct'&&!recipientId)} title="Send"><Send size={17}/></button><button type="button" className={recording?'record-button recording':'record-button'} onClick={()=>void voice()} disabled={uploading||(mode==='direct'&&!recipientId)} title={recording?'Stop recording':'Record voice message'}>{recording?<Square size={16}/>:<Mic size={17}/>}</button></form>
-      <p className="chat-hint">{recording?'Recording — tap stop to send.':mode==='direct'?'Private text and voice messages are visible only to you and the selected teammate.':'Team text and voice messages are visible to all team members.'}</p>
+      <p className="chat-hint">{recording?'Recording — tap stop to send.':mode==='direct'?'Private text and recorded voice messages are visible only to you and the selected teammate.':'Team text and voice messages are visible to all team members.'}</p>
+      {mode==='direct'&&recipientId&&activeMember&&<LivePTT teamId={teamId} userId={userId} recipientId={recipientId} recipientHandle={activeMember.handle}/>}
       {notice&&<p className="notice">{notice}</p>}
     </div>
     <div className="photo-panel"><div><span className="eyebrow">MAP INTEL</span><h3>Drop a photo pin</h3><p className="chat-hint">AI identifies the main subject and creates a concise map title, then attaches your GPS position.</p></div><input className="photo-title" value={title} onChange={e=>setTitle(e.target.value)} placeholder="Photo title (optional)" aria-label="Photo title"/><label className="photo-upload"><Camera size={17}/>{uploading?(aiTitle||'Uploading…'):'Take photo / choose image'}<input type="file" accept="image/*" capture="environment" onChange={photo} disabled={uploading}/></label></div>
