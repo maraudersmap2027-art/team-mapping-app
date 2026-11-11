@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Capacitor } from '@capacitor/core';
-import { Geolocation } from '@capacitor/geolocation';
+import { getCurrentDevicePosition } from './lib/location';
 import type { FormEvent, ChangeEvent } from 'react';
 import { Camera, Mic, Radio, Send, Square } from 'lucide-react';
 import { supabase } from './lib/supabase';
@@ -79,24 +78,9 @@ export default function TeamComms({teamId,userId}:{teamId:string;userId:string})
     if(!file.type.startsWith('image/')){setNotice('Choose an image file.');return;}
     setUploading(true);setNotice('');
     try {
-      let latitude:number|null=null;
-      let longitude:number|null=null;
-      let locationAvailable=false;
-      try {
-        if(Capacitor.isNativePlatform()){
-          let permission=await Geolocation.checkPermissions();
-          if(permission.location!=='granted') permission=await Geolocation.requestPermissions();
-          if(permission.location==='granted'){
-            const position=await Geolocation.getCurrentPosition({enableHighAccuracy:true,timeout:15000});
-            latitude=position.coords.latitude; longitude=position.coords.longitude; locationAvailable=true;
-          }
-        }else if(navigator.geolocation){
-          const position=await new Promise<GeolocationPosition>((resolve,reject)=>navigator.geolocation.getCurrentPosition(resolve,reject,{enableHighAccuracy:true,timeout:15000}));
-          latitude=position.coords.latitude; longitude=position.coords.longitude; locationAvailable=true;
-        }
-      }catch(locationError){
-        console.warn('Photo location unavailable; continuing without GPS:',locationError);
-      }
+      const position=await getCurrentDevicePosition({enableHighAccuracy:true,timeout:25000,maximumAge:0});
+      const latitude=position.coords.latitude;
+      const longitude=position.coords.longitude;
       setAiTitle('Analyzing photo with AI…');
       const resized = await new Promise<{blob:Blob; data:string}>((resolve,reject)=>{
         const image = new Image(); const objectUrl = URL.createObjectURL(file);
@@ -123,11 +107,15 @@ export default function TeamComms({teamId,userId}:{teamId:string;userId:string})
       if(up.error)throw up.error;
       const result=await supabase.from('map_pins').insert({team_id:teamId,creator_id:userId,title:finalTitle,description:generated ? 'AI-generated photo title' : null,image_path:path,latitude,longitude});
       if(result.error){await supabase.storage.from('team-media').remove([path]);throw result.error;}
-      setTitle('');setAiTitle(''); setNotice((generated ? 'AI titled your photo: '+finalTitle : 'Photo saved; AI title unavailable. ') + (locationAvailable ? ' Photo pin added to the map.' : ' Photo saved without a map location because GPS permission/location was unavailable.'));
+      setTitle('');setAiTitle('');
+      setNotice(generated ? 'AI titled your photo: '+finalTitle+'. Photo pin added to the map.' : 'Photo pin added. AI title unavailable; used a fallback title.');
       if(ai.error) console.warn('AI title generation unavailable:',ai.error.message);
     } catch(e){
-      setNotice(e instanceof Error ? e.message : 'Could not save photo. Please try again.');
-    finally{setUploading(false);setAiTitle('');event.target.value='';}
+      const message=e instanceof Error ? e.message : 'Could not create photo pin. Please try again.';
+      setNotice(message);
+    } finally {
+      setUploading(false);setAiTitle('');event.target.value='';
+    }
   }
 
   return <section className="comms-grid">
