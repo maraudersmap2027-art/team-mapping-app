@@ -52,6 +52,24 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync android
 
+      - name: Declare Android location permissions
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          manifest = Path("android/app/src/main/AndroidManifest.xml")
+          content = manifest.read_text()
+          if "android.permission.ACCESS_COARSE_LOCATION" not in content:
+              permissions = """    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+              <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+          """
+              content = content.replace("    <application", permissions + "    <application", 1)
+              manifest.write_text(content)
+          if "android.permission.ACCESS_COARSE_LOCATION" not in manifest.read_text() or "android.permission.ACCESS_FINE_LOCATION" not in manifest.read_text():
+              raise SystemExit("Failed to add Android location permissions")
+          print("Android coarse and fine location permissions are declared.")
+          PY
+
       - name: Build debug APK
         working-directory: android
         run: ./gradlew assembleDebug
