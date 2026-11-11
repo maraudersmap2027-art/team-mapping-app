@@ -9,6 +9,7 @@ export default function TeamComms({teamId,userId}:{teamId:string;userId:string})
   const [items,setItems]=useState<Message[]>([]);
   const [draft,setDraft]=useState('');
   const [title,setTitle]=useState('');
+  const [aiTitle,setAiTitle]=useState('');
   const [recording,setRecording]=useState(false);
   const [uploading,setUploading]=useState(false);
   const [notice,setNotice]=useState('');
@@ -77,15 +78,36 @@ export default function TeamComms({teamId,userId}:{teamId:string;userId:string})
     setUploading(true);setNotice('');
     try {
       const pos=await new Promise<GeolocationPosition>((resolve,reject)=>navigator.geolocation.getCurrentPosition(resolve,reject,{enableHighAccuracy:true,timeout:15000}));
-      const ext=file.name.split('.').pop()?.toLowerCase()||'jpg';
-      const path=teamId+'/'+userId+'/'+crypto.randomUUID()+'.'+ext;
-      const up=await supabase.storage.from('team-media').upload(path,file,{contentType:file.type});
+      setAiTitle('Analyzing photo with AI…');
+      const resized = await new Promise<{blob:Blob; data:string}>((resolve,reject)=>{
+        const image = new Image(); const objectUrl = URL.createObjectURL(file);
+        image.onload = () => {
+          const scale = Math.min(1, 1280 / Math.max(image.width,image.height));
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.max(1,Math.round(image.width*scale)); canvas.height = Math.max(1,Math.round(image.height*scale));
+          const ctx = canvas.getContext('2d');
+          if(!ctx){URL.revokeObjectURL(objectUrl);reject(new Error('Could not process this image.'));return;}
+          ctx.drawImage(image,0,0,canvas.width,canvas.height);
+          canvas.toBlob(blob=>{
+            URL.revokeObjectURL(objectUrl); if(!blob){reject(new Error('Could not compress this image.'));return;}
+            const reader=new FileReader(); reader.onload=()=>resolve({blob,data:String(reader.result).split(',')[1]});
+            reader.onerror=()=>reject(new Error('Could not prepare image for AI.')); reader.readAsDataURL(blob);
+          },'image/jpeg',0.82);
+        };
+        image.onerror=()=>{URL.revokeObjectURL(objectUrl);reject(new Error('Could not read this image.'));}; image.src=objectUrl;
+      });
+      const ai = await supabase.functions.invoke('title-photo',{body:{imageBase64:resized.data,mimeType:'image/jpeg'}});
+      const generated = typeof ai.data?.title==='string' ? ai.data.title.trim() : '';
+      const finalTitle = title.trim() || generated || 'Field photo '+new Date().toLocaleString();
+      const path=teamId+'/'+userId+'/'+crypto.randomUUID()+'.jpg';
+      const up=await supabase.storage.from('team-media').upload(path,resized.blob,{contentType:'image/jpeg'});
       if(up.error)throw up.error;
-      const result=await supabase.from('map_pins').insert({team_id:teamId,creator_id:userId,title:title.trim()||'Field photo '+new Date().toLocaleString(),image_path:path,latitude:pos.coords.latitude,longitude:pos.coords.longitude});
+      const result=await supabase.from('map_pins').insert({team_id:teamId,creator_id:userId,title:finalTitle,description:generated ? 'AI-generated photo title' : null,image_path:path,latitude:pos.coords.latitude,longitude:pos.coords.longitude});
       if(result.error){await supabase.storage.from('team-media').remove([path]);throw result.error;}
-      setTitle('');setNotice('Photo pin added to the map.');
+      setTitle('');setAiTitle(''); setNotice(generated ? 'AI titled your photo: '+finalTitle : 'Photo pin added. AI title unavailable; used a fallback title.');
+      if(ai.error) console.warn('AI title generation unavailable:',ai.error.message);
     } catch(e){setNotice(e instanceof Error?e.message:'Could not create photo pin.');}
-    finally{setUploading(false);event.target.value='';}
+    finally{setUploading(false);setAiTitle('');event.target.value='';}
   }
 
   return <section className="comms-grid">
@@ -95,6 +117,6 @@ export default function TeamComms({teamId,userId}:{teamId:string;userId:string})
       <form className="chat-compose" onSubmit={send}><input value={draft} onChange={e=>setDraft(e.target.value)} placeholder="Message your team…" aria-label="Message your team"/><button className="send-button" disabled={!draft.trim()} title="Send"><Send size={17}/></button><button type="button" className={recording?'record-button recording':'record-button'} onClick={()=>void voice()} disabled={uploading} title={recording?'Stop recording':'Record PTT voice note'}>{recording?<Square size={16}/>:<Mic size={17}/>}</button></form>
       <p className="chat-hint">{recording?'Recording — tap stop to send.':'Voice notes are shared with the whole team.'}</p>
     </div>
-    <div className="photo-panel"><div><span className="eyebrow">MAP INTEL</span><h3>Drop a photo pin</h3><p className="chat-hint">Attach your current GPS position to a photo.</p></div><input className="photo-title" value={title} onChange={e=>setTitle(e.target.value)} placeholder="Photo title (optional)" aria-label="Photo title"/><label className="photo-upload"><Camera size={17}/>{uploading?'Uploading…':'Take photo / choose image'}<input type="file" accept="image/*" capture="environment" onChange={photo} disabled={uploading}/></label>{notice&&<p className="notice">{notice}</p>}</div>
+    <div className="photo-panel"><div><span className="eyebrow">MAP INTEL</span><h3>Drop a photo pin</h3><p className="chat-hint">AI identifies the main subject and creates a concise map title, then attaches your GPS position.</p></div><input className="photo-title" value={title} onChange={e=>setTitle(e.target.value)} placeholder="Photo title (optional)" aria-label="Photo title"/><label className="photo-upload"><Camera size={17}/>{uploading?(aiTitle||'Uploading…'):'Take photo / choose image'}<input type="file" accept="image/*" capture="environment" onChange={photo} disabled={uploading}/></label>{notice&&<p className="notice">{notice}</p>}</div>
   </section>;
 }
