@@ -81,7 +81,7 @@ export default function TeamComms({teamId,userId}:{teamId:string;userId:string})
       const position=await getCurrentDevicePosition({enableHighAccuracy:true,timeout:25000,maximumAge:0});
       const latitude=position.coords.latitude;
       const longitude=position.coords.longitude;
-      setAiTitle('Analyzing photo with AI…');
+      setAiTitle('Preparing photo…');
       const resized = await new Promise<{blob:Blob; data:string}>((resolve,reject)=>{
         const image = new Image(); const objectUrl = URL.createObjectURL(file);
         image.onload = () => {
@@ -99,7 +99,15 @@ export default function TeamComms({teamId,userId}:{teamId:string;userId:string})
         };
         image.onerror=()=>{URL.revokeObjectURL(objectUrl);reject(new Error('Could not read this image.'));}; image.src=objectUrl;
       });
-      const ai = await supabase.functions.invoke('title-photo',{body:{imageBase64:resized.data,mimeType:'image/jpeg'}});
+      setAiTitle('Analyzing photo with AI…');
+      let aiTimer: number | undefined;
+      const ai = await Promise.race([
+        supabase.functions.invoke('title-photo',{body:{imageBase64:resized.data,mimeType:'image/jpeg'}}),
+        new Promise<{data:null;error:Error}>(resolve=>{
+          aiTimer=window.setTimeout(()=>resolve({data:null,error:new Error('AI title request timed out after 20 seconds')}),20000);
+        })
+      ]);
+      if(aiTimer!==undefined) window.clearTimeout(aiTimer);
       const generated = typeof ai.data?.title==='string' ? ai.data.title.trim() : '';
       const finalTitle = title.trim() || generated || 'Field photo '+new Date().toLocaleString();
       const path=teamId+'/'+userId+'/'+crypto.randomUUID()+'.jpg';
