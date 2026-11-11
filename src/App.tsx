@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { getCurrentDevicePosition } from './lib/location';
 import type { FormEvent } from 'react';
 import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
 import L from 'leaflet';
@@ -121,9 +122,9 @@ export default function App() {
   }
 
   async function shareLocation() {
-    if (!navigator.geolocation) { setNotice('Location is not supported by this browser.'); return; }
     setLocating(true); setNotice('');
-    navigator.geolocation.getCurrentPosition(async (p) => {
+    try {
+      const p=await getCurrentDevicePosition({enableHighAccuracy:true,timeout:25000,maximumAge:10000});
       const next: [number, number] = [p.coords.latitude, p.coords.longitude];
       setPosition(next);
       if (supabase && team) {
@@ -133,21 +134,25 @@ export default function App() {
         });
         setNotice(error ? error.message : 'Your location was shared with your team.');
       } else setNotice('Location acquired.');
-      setLocating(false);
-    }, (error) => { setNotice(error.message); setLocating(false); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 });
+    } catch(error) {
+      setNotice(error instanceof Error ? error.message : 'Could not get your location.');
+    } finally { setLocating(false); }
   }
 
   async function claimPin(pinId: string) {
     if (!supabase) return;
     setNotice('Checking your location…');
-    navigator.geolocation.getCurrentPosition(async p => {
-      const { data, error } = await supabase!.rpc('claim_map_pin', {
+    try {
+      const p=await getCurrentDevicePosition({enableHighAccuracy:true,timeout:25000,maximumAge:0});
+      const { data, error } = await supabase.rpc('claim_map_pin', {
         target_pin: pinId, claimant_lat: p.coords.latitude, claimant_lon: p.coords.longitude,
       });
       if (error) setNotice(error.message);
       else if (data) { setPins(current => current.filter(pin => pin.id !== pinId)); setNotice('Pin claimed and removed from the live map.'); }
       else setNotice('You must be within 75 metres of the pin to claim it.');
-    }, e => setNotice(e.message), { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+    } catch(error) {
+      setNotice(error instanceof Error ? error.message : 'Could not get your location.');
+    }
   }
 
   async function signOut() { await supabase?.auth.signOut(); setTeam(null); }
