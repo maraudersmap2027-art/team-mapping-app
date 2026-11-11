@@ -126,7 +126,7 @@ export default function App() {
   async function updateStatus(status: Profile['status']) {
     if (!supabase || !profile) return;
     const { error } = await supabase.from('profiles').update({ status }).eq('id', profile.id);
-    if (error) setNotice(error.message); else setProfile({ ...profile, status });
+    if (error) setNotice(error.message); else { setProfile({ ...profile, status }); setTeamMembers(current => current.map(member => member.id === profile.id ? { ...member, status } : member)); }
   }
 
   async function shareLocation() {
