@@ -166,10 +166,18 @@ export default function App() {
   }
 
   function checkNearbyPins(latitude: number, longitude: number) {
-    const nearby = pinsRef.current.filter(pin => !pin.claimed_at && !alertedPins.current.has(pin.id) && distanceMetres(latitude, longitude, pin.latitude, pin.longitude) <= alertDistanceRef.current);
+    const pins = pinsRef.current.filter(pin => !pin.claimed_at);
+    const radius = alertDistanceRef.current;
+    // Re-arm a pin after the user has moved safely outside its alert radius.
+    pins.forEach(pin => {
+      if (distanceMetres(latitude, longitude, pin.latitude, pin.longitude) > radius * 1.5) {
+        alertedPins.current.delete(pin.id);
+      }
+    });
+    const nearby = pins.filter(pin => !alertedPins.current.has(pin.id) && distanceMetres(latitude, longitude, pin.latitude, pin.longitude) <= radius);
     if (!nearby.length) return;
     nearby.forEach(pin => alertedPins.current.add(pin.id));
-    const message = nearby.length === 1 ? 'You are within ' + alertDistanceRef.current + 'm of "' + nearby[0].title + '".' : 'You are near ' + nearby.length + ' team pins.';
+    const message = nearby.length === 1 ? 'You are within ' + radius + 'm of "' + nearby[0].title + '".' : 'You are near ' + nearby.length + ' team pins.';
     setNotice(message);
     if ('vibrate' in navigator) navigator.vibrate([180, 90, 180]);
     void showProximityNotification(message);
@@ -178,8 +186,21 @@ export default function App() {
   async function showProximityNotification(message: string) {
     if (Capacitor.isNativePlatform()) {
       try {
-        const permission = await LocalNotifications.checkPermissions();
-        if (permission.display !== 'granted') return;
+        let permission = await LocalNotifications.checkPermissions();
+        if (permission.display !== 'granted') permission = await LocalNotifications.requestPermissions();
+        if (permission.display !== 'granted') {
+          setNotice('Nearby pin found. Allow FieldLink notifications in Android settings to receive alerts.');
+          return;
+        }
+        if (Capacitor.getPlatform() === 'android') {
+          await LocalNotifications.createChannel({
+            id: 'fieldlink-proximity',
+            name: 'Nearby team pins',
+            description: 'Alerts when you are close to a team photo pin',
+            importance: 4,
+            vibration: true,
+          });
+        }
         await LocalNotifications.schedule({
           notifications: [{
             id: Math.floor(Date.now() % 2147483647),
@@ -195,8 +216,9 @@ export default function App() {
       }
       return;
     }
-    if ('Notification' in window && Notification.permission === 'granted') {
-      new Notification('FieldLink nearby team pin', { body: message });
+    if ('Notification' in window) {
+      if (Notification.permission === 'default') await Notification.requestPermission();
+      if (Notification.permission === 'granted') new Notification('FieldLink nearby team pin', { body: message });
     }
   }
 
