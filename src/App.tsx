@@ -371,7 +371,7 @@ export default function App() {
   }
 
   async function removeTeamMember(member: Profile) {
-    if (!supabase || !team || team.owner_id !== session.user.id || member.id === team.owner_id) return;
+    if (!supabase || !team || !session || team.owner_id !== session.user.id || member.id === team.owner_id) return;
     if (!window.confirm('Remove ' + member.handle + ' from ' + team.name + '? They will lose access to this team.')) return;
     const { data, error } = await supabase.rpc('remove_team_member', { target_team: team.id, target_user: member.id });
     if (error) setNotice(error.message);
@@ -395,7 +395,7 @@ export default function App() {
   }
 
   async function resetInviteCode() {
-    if (!supabase || !team || team.owner_id !== session.user.id) return;
+    if (!supabase || !team || !session || team.owner_id !== session.user.id) return;
     if (!window.confirm('Reset the invite code? The old code will stop working immediately.')) return;
     const { data, error } = await supabase.rpc('rotate_team_invite_code', { target_team: team.id });
     if (error) setNotice(error.message);
