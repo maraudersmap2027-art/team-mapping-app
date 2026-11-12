@@ -4,7 +4,7 @@ const config: CapacitorConfig = {
   appId: 'com.teammapping.fieldlink',
   appName: 'FieldLink',
   webDir: 'dist',
-  android: { allowMixedContent: false },
+  android: { allowMixedContent: false, useLegacyBridge: true },
 };
 
 export default config;
