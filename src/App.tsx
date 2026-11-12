@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { LocalNotifications } from '@capacitor/local-notifications';
 import { getCurrentDevicePosition } from './lib/location';
 import type { FormEvent } from 'react';
 import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
@@ -146,13 +148,64 @@ export default function App() {
     const message = nearby.length === 1 ? 'You are within ' + alertDistance + 'm of "' + nearby[0].title + '".' : 'You are near ' + nearby.length + ' team pins.';
     setNotice(message);
     if ('vibrate' in navigator) navigator.vibrate([180, 90, 180]);
-    if ('Notification' in window && Notification.permission === 'granted') new Notification('FieldLink nearby pin', { body: message });
+    void showProximityNotification(message);
+  }
+
+  async function showProximityNotification(message: string) {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const permission = await LocalNotifications.checkPermissions();
+        if (permission.display !== 'granted') return;
+        await LocalNotifications.schedule({
+          notifications: [{
+            id: Math.floor(Date.now() % 2147483647),
+            title: 'FieldLink nearby team pin',
+            body: message,
+            schedule: { at: new Date(Date.now() + 750) },
+            channelId: 'fieldlink-proximity',
+          }],
+        });
+      } catch (error) {
+        console.warn('Android local notification failed:', error);
+        setNotice('Could not show an Android notification. In-app alerts still work.');
+      }
+      return;
+    }
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification('FieldLink nearby team pin', { body: message });
+    }
   }
 
   async function enablePinNotifications() {
-    if (!('Notification' in window)) { setNotice('System notifications are not supported here. In-app alerts still work.'); return; }
+    if (Capacitor.isNativePlatform()) {
+      try {
+        let permission = await LocalNotifications.checkPermissions();
+        if (permission.display !== 'granted') permission = await LocalNotifications.requestPermissions();
+        if (permission.display !== 'granted') {
+          setNotice('Android notification permission was not granted. In-app alerts still work.');
+          return;
+        }
+        if (Capacitor.getPlatform() === 'android') {
+          await LocalNotifications.createChannel({
+            id: 'fieldlink-proximity',
+            name: 'Nearby team pins',
+            description: 'Alerts when you are close to a team photo pin',
+            importance: 4,
+            vibration: true,
+          });
+        }
+        setNotice('Android notifications enabled. Alerts will appear when you share your location near a team pin.');
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : 'Could not enable Android notifications.');
+      }
+      return;
+    }
+    if (!('Notification' in window)) {
+      setNotice('Browser notifications are not supported here. In-app alerts still work.');
+      return;
+    }
     const permission = await Notification.requestPermission();
-    setNotice(permission === 'granted' ? 'Pin notifications enabled.' : 'Notifications not enabled. In-app alerts still work.');
+    setNotice(permission === 'granted' ? 'Browser notifications enabled.' : 'Notifications not enabled. In-app alerts still work.');
   }
 
   async function shareLocation() {
