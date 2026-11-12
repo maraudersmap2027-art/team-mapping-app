@@ -52,3 +52,50 @@ export async function getCurrentDevicePosition(options: PositionOptions = {}): P
     );
   });
 }
+
+
+export type DeviceCoordinates = { latitude: number; longitude: number; accuracy: number };
+
+export async function watchDevicePosition(
+  onPosition: (coordinates: DeviceCoordinates) => void,
+  onError: (error: unknown) => void,
+  options: PositionOptions = {},
+): Promise<() => void> {
+  const settings: PositionOptions = {
+    enableHighAccuracy: true,
+    timeout: 25000,
+    maximumAge: 5000,
+    ...options,
+  };
+
+  if (Capacitor.isNativePlatform()) {
+    let permission = await Geolocation.checkPermissions();
+    if (permission.location !== 'granted') {
+      permission = await Geolocation.requestPermissions({ permissions: ['location'] });
+    }
+    if (permission.location !== 'granted') {
+      throw new Error('FieldLink needs location permission. In Android Settings, open Apps → FieldLink → Permissions → Location and choose Allow only while using the app.');
+    }
+    const watchId = await Geolocation.watchPosition(settings, (position, error) => {
+      if (error) onError(error);
+      else if (position) onPosition({
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracy: position.coords.accuracy,
+      });
+    });
+    return () => { void Geolocation.clearWatch({ id: watchId }); };
+  }
+
+  if (!navigator.geolocation) throw new Error('Location is not supported on this device.');
+  const watchId = navigator.geolocation.watchPosition(
+    position => onPosition({
+      latitude: position.coords.latitude,
+      longitude: position.coords.longitude,
+      accuracy: position.coords.accuracy,
+    }),
+    error => onError(new Error(error.message || 'Browser location permission was denied.')),
+    settings,
+  );
+  return () => navigator.geolocation.clearWatch(watchId);
+}
