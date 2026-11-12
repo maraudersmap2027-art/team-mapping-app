@@ -52,22 +52,23 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync android
 
-      - name: Declare Android location permissions
+      - name: Declare Android location, microphone, and notification permissions
         run: |
           python3 - <<'PY'
           from pathlib import Path
           manifest = Path("android/app/src/main/AndroidManifest.xml")
           content = manifest.read_text()
-          if any(permission not in content for permission in ["android.permission.ACCESS_COARSE_LOCATION", "android.permission.RECORD_AUDIO", "android.permission.MODIFY_AUDIO_SETTINGS"]):
+          if any(permission not in content for permission in ["android.permission.ACCESS_COARSE_LOCATION", "android.permission.RECORD_AUDIO", "android.permission.MODIFY_AUDIO_SETTINGS", "android.permission.POST_NOTIFICATIONS"]):
               permissions = """    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
               <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
               <uses-permission android:name="android.permission.RECORD_AUDIO" />
               <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
               <uses-feature android:name="android.hardware.location.gps" android:required="false" />
           """
               content = content.replace("    <application", permissions + "    <application", 1)
               manifest.write_text(content)
-          if any(permission not in manifest.read_text() for permission in ["android.permission.ACCESS_COARSE_LOCATION", "android.permission.ACCESS_FINE_LOCATION", "android.permission.RECORD_AUDIO", "android.permission.MODIFY_AUDIO_SETTINGS"]):
+          if any(permission not in manifest.read_text() for permission in ["android.permission.ACCESS_COARSE_LOCATION", "android.permission.ACCESS_FINE_LOCATION", "android.permission.RECORD_AUDIO", "android.permission.MODIFY_AUDIO_SETTINGS", "android.permission.POST_NOTIFICATIONS"]):
               raise SystemExit("Failed to add Android location and microphone permissions")
           print("Android coarse/fine location and microphone permissions are declared.")
           PY
