@@ -52,7 +52,6 @@ export default function App() {
   const [editPinDescription, setEditPinDescription] = useState('');
   const [tracking, setTracking] = useState(false);
   const watchStopRef = useRef<(() => void) | null>(null);
-  const backgroundWatcherIdRef = useRef<string | null>(null);
   const lastPublishedLocationRef = useRef<{ latitude: number; longitude: number; at: number } | null>(null);
   const pinsRef = useRef<Pin[]>([]);
   const alertDistanceRef = useRef(alertDistance);
@@ -310,6 +309,18 @@ export default function App() {
         setTracking(false);
       };
       if (Capacitor.isNativePlatform()) {
+        let notificationPermission = await LocalNotifications.checkPermissions();
+        if (notificationPermission.display !== 'granted') notificationPermission = await LocalNotifications.requestPermissions();
+        if (notificationPermission.display !== 'granted') throw new Error('Allow FieldLink notifications so Android can show the required background tracking notice and proximity alerts.');
+        if (Capacitor.getPlatform() === 'android') {
+          await LocalNotifications.createChannel({
+            id: 'fieldlink-proximity',
+            name: 'Nearby team pins',
+            description: 'Alerts when you are close to a team photo pin',
+            importance: 4,
+            vibration: true,
+          });
+        }
         const watcherId = await BackgroundGeolocation.addWatcher({
           backgroundTitle: 'FieldLink location sharing',
           backgroundMessage: 'FieldLink is sharing your location and checking nearby pins. Tap to return to the app.',
@@ -320,10 +331,8 @@ export default function App() {
           if (error) { onTrackingError(error); return; }
           if (location) onLocation(location.latitude, location.longitude);
         });
-        backgroundWatcherIdRef.current = watcherId;
         watchStopRef.current = () => {
           void BackgroundGeolocation.removeWatcher({ id: watcherId });
-          backgroundWatcherIdRef.current = null;
         };
         setTracking(true);
         setNotice('Background tracking is on. Android will keep a tracking notification visible while FieldLink checks nearby pins.');
@@ -343,7 +352,6 @@ export default function App() {
   function stopLiveTracking() {
     watchStopRef.current?.();
     watchStopRef.current = null;
-    backgroundWatcherIdRef.current = null;
     setTracking(false);
     setNotice('Live location sharing stopped.');
   }
